@@ -91,3 +91,32 @@ SELECT
     d.DonationDate
 FROM Donation d
 LEFT JOIN Customer c ON d.CustomerID = c.CustomerID;
+CREATE TRIGGER trg_OrderDelivered
+ON Orders
+AFTER UPDATE
+AS
+BEGIN
+    IF UPDATE(Status)
+    BEGIN
+        UPDATE r
+        SET r.IsActive = r.IsActive
+        FROM Restaurant r
+        INNER JOIN inserted i ON r.RestaurantID = i.RestaurantID
+        WHERE i.Status = 'Teslim Edildi';
+    END
+END;
+CREATE TRIGGER trg_DonationInsert
+ON Donation
+AFTER INSERT
+AS
+BEGIN
+    UPDATE CharityPool
+    SET TotalAmount = TotalAmount + (
+        SELECT SUM(Amount)
+        FROM inserted
+    );
+END;
+CREATE INDEX IX_Customer_Email
+ON Customer(Email);
+CREATE INDEX IX_Orders_OrderDate
+ON Orders(OrderDate);
