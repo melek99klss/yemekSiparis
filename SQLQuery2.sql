@@ -1,13 +1,10 @@
-
-USE YemekSiparis;
-
 CREATE TABLE Customer (
     CustomerID INT IDENTITY(1,1) PRIMARY KEY,
     FullName NVARCHAR(100) NOT NULL,
     Email NVARCHAR(100) NOT NULL UNIQUE,
     Phone NVARCHAR(20) NOT NULL UNIQUE,
     Password NVARCHAR(100) NOT NULL,
-    IsActive BIT DEFAULT 1
+    IsActive BIT NOT NULL DEFAULT 1
 );
 CREATE TABLE Restaurant (
     RestaurantID INT IDENTITY(1,1) PRIMARY KEY,
@@ -15,14 +12,14 @@ CREATE TABLE Restaurant (
     Address NVARCHAR(200),
     Phone NVARCHAR(20),
     Rating DECIMAL(2,1) CHECK (Rating BETWEEN 1 AND 5),
-    IsActive BIT DEFAULT 1
+    IsActive BIT NOT NULL DEFAULT 1
 );
 CREATE TABLE Product (
     ProductID INT IDENTITY(1,1) PRIMARY KEY,
     RestaurantID INT FOREIGN KEY REFERENCES Restaurant(RestaurantID),
     Name NVARCHAR(100) NOT NULL,
     Price DECIMAL(10,2) CHECK (Price > 0),
-    IsActive BIT DEFAULT 1
+    IsActive BIT NOT NULL DEFAULT 1
 );
 CREATE TABLE Orders (
     OrderID INT IDENTITY(1,1) PRIMARY KEY,
@@ -32,44 +29,26 @@ CREATE TABLE Orders (
     TotalAmount DECIMAL(10,2) CHECK (TotalAmount >= 0),
     Status NVARCHAR(50)
 );
-SELECT 
-    o.OrderID,
-    c.FullName AS CustomerName,
-    r.Name AS RestaurantName,
-    p.Name AS ProductName,
-    od.Quantity,
-    od.UnitPrice,
-    (od.Quantity * od.UnitPrice) AS TotalPrice,
-    o.OrderDate,
-    o.Status
-FROM Orders o
-INNER JOIN Customer c ON o.CustomerID = c.CustomerID
-INNER JOIN Restaurant r ON o.RestaurantID = r.RestaurantID
-INNER JOIN OrderDetails od ON o.OrderID = od.OrderID
-INNER JOIN Product p ON od.ProductID = p.ProductID;
--- GROUP BY ANALÝZ SORGUSU
-
-SELECT 
-    r.Name AS RestaurantName,
-    COUNT(o.OrderID) AS TotalOrders,
-    SUM(o.TotalAmount) AS TotalRevenue,
-    AVG(o.TotalAmount) AS AvgOrderValue
-FROM Restaurant r
-INNER JOIN Orders o ON r.RestaurantID = o.RestaurantID
-GROUP BY r.Name;
-
-
-
--- SUBQUERY SORGUSU
-
-SELECT 
-    c.CustomerID,
-    c.FullName,
-    c.Email
-FROM Customer c
-WHERE c.CustomerID NOT IN (
-    SELECT d.CustomerID
-    FROM Donation d
+CREATE TABLE OrderDetails (
+    OrderDetailID INT IDENTITY(1,1) PRIMARY KEY,
+    OrderID INT FOREIGN KEY REFERENCES Orders(OrderID),
+    ProductID INT FOREIGN KEY REFERENCES Product(ProductID),
+    Quantity INT CHECK (Quantity > 0),
+    UnitPrice DECIMAL(10,2)
+);
+CREATE TABLE Courier (
+    CourierID INT IDENTITY(1,1) PRIMARY KEY,
+    FullName NVARCHAR(100)
+);
+CREATE TABLE Donation (
+    DonationID INT IDENTITY(1,1) PRIMARY KEY,
+    CustomerID INT FOREIGN KEY REFERENCES Customer(CustomerID),
+    Amount DECIMAL(10,2) CHECK (Amount > 0),
+    DonationDate DATETIME DEFAULT GETDATE()
+);
+CREATE TABLE CharityPool (
+    PoolID INT IDENTITY(1,1) PRIMARY KEY,
+    TotalAmount DECIMAL(10,2) DEFAULT 0
 );
 CREATE VIEW vw_AktifRestoranMenuleri AS
 SELECT 
@@ -81,16 +60,37 @@ SELECT
 FROM Restaurant r
 INNER JOIN Product p ON r.RestaurantID = p.RestaurantID
 WHERE r.IsActive = 1 AND p.IsActive = 1;
-CREATE VIEW vw_AskidaYemekHavuzu AS
+SELECT 
+    r.Name AS RestaurantName,
+    COUNT(o.OrderID) AS TotalOrders,
+    SUM(o.TotalAmount) AS TotalRevenue,
+    AVG(o.TotalAmount) AS AvgOrderValue
+FROM Restaurant r
+INNER JOIN Orders o ON r.RestaurantID = o.RestaurantID
+GROUP BY r.Name;
+
 SELECT 
     c.CustomerID,
     c.FullName,
-    d.DonationID,
-    d.Amount,
-    d.IsAnonymous,
-    d.DonationDate
-FROM Donation d
-LEFT JOIN Customer c ON d.CustomerID = c.CustomerID;
+    c.Email
+FROM Customer c
+WHERE c.CustomerID NOT IN (
+    SELECT d.CustomerID
+    FROM Donation d
+);
+CREATE TRIGGER trg_DonationInsert
+ON Donation
+AFTER INSERT
+AS
+BEGIN
+    UPDATE CharityPool
+    SET TotalAmount = TotalAmount + (
+        SELECT SUM(Amount)
+        FROM inserted
+    );
+END;
+
+
 CREATE TRIGGER trg_OrderDelivered
 ON Orders
 AFTER UPDATE
@@ -104,17 +104,6 @@ BEGIN
         INNER JOIN inserted i ON r.RestaurantID = i.RestaurantID
         WHERE i.Status = 'Teslim Edildi';
     END
-END;
-CREATE TRIGGER trg_DonationInsert
-ON Donation
-AFTER INSERT
-AS
-BEGIN
-    UPDATE CharityPool
-    SET TotalAmount = TotalAmount + (
-        SELECT SUM(Amount)
-        FROM inserted
-    );
 END;
 CREATE INDEX IX_Customer_Email
 ON Customer(Email);
